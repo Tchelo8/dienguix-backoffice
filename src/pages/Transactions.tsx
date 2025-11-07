@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import axios from 'axios';
 import {
   Select,
   SelectContent,
@@ -128,7 +129,7 @@ export default function Transactions() {
     },
   };
 
-  
+
 
   // Charger les données des opérateurs depuis l'API
   const loadOperatorsData = async () => {
@@ -231,13 +232,35 @@ export default function Transactions() {
     }
   };
 
+
+
+  const loadSendOperators2 = async () => {
+    try {
+      const token = localStorage.getItem("auth_token");
+      const response = await axios.get(
+        "https://dienguixbackend-production.up.railway.app/index.php/api/operators/user-country",
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          }
+        }
+      );
+      if (response.data.success && response.data.data) {
+        setSendOperators(response.data.data);
+      }
+    } catch (error: any) {
+      console.error(" Erreur axios:", error.response?.data || error.message);
+    }
+  };
+
   // Charger les données du modal de remboursement
   const loadRefundModalData = async () => {
     setLoadingRefundData(true);
     await Promise.all([
       loadUsers(),
       loadExchangeRates(),
-      loadSendOperators()
+      loadSendOperators2()
     ]);
     setLoadingRefundData(false);
   };
@@ -349,14 +372,12 @@ export default function Transactions() {
       formatTransactionId(transaction.id)
         .toLowerCase()
         .includes(searchTerm.toLowerCase()) ||
-      `${transaction.sender?.first_name || ""} ${
-        transaction.sender?.last_name || ""
-      }`
+      `${transaction.sender?.first_name || ""} ${transaction.sender?.last_name || ""
+        }`
         .toLowerCase()
         .includes(searchTerm.toLowerCase()) ||
-      `${transaction.receiver?.first_name || ""} ${
-        transaction.receiver?.last_name || ""
-      }`
+      `${transaction.receiver?.first_name || ""} ${transaction.receiver?.last_name || ""
+        }`
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
 
@@ -393,8 +414,8 @@ export default function Transactions() {
 
   const handleRefund = async () => {
     // Validation des données
-    if (!refundData.userId || !refundData.amount || !refundData.transactionReason || 
-        !refundData.exchangeRateId || !refundData.sendMethod) {
+    if (!refundData.userId || !refundData.amount || !refundData.transactionReason ||
+      !refundData.exchangeRateId || !refundData.sendMethod) {
       console.error("Tous les champs obligatoires doivent être remplis");
       return;
     }
@@ -427,7 +448,7 @@ export default function Transactions() {
       };
 
       console.log("Envoi du remboursement:", payload);
-      
+
       // Envoyer la transaction
       const response = await envoyerSafe("api/transactions/create/dgapp", payload, {
         showSuccessToast: true,
@@ -446,7 +467,7 @@ export default function Transactions() {
           notes: "",
         });
         setIsRefundModalOpen(false);
-        
+
         // Recharger les transactions
         loadTransactions();
       }
@@ -732,8 +753,8 @@ export default function Transactions() {
                           {selectedPeriod === "general"
                             ? "Général"
                             : selectedPeriod === "today"
-                            ? "Aujourd'hui"
-                            : "Ce mois"}
+                              ? "Aujourd'hui"
+                              : "Ce mois"}
                         </Badge>
                       </div>
 
@@ -1041,7 +1062,7 @@ export default function Transactions() {
                       {formatTransactionId(selectedTransaction.id)}
                     </p>
                   </div>
-                 
+
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">
                       Type de Transaction
@@ -1110,7 +1131,7 @@ export default function Transactions() {
                       {formatDate(selectedTransaction.updated_at)}
                     </p>
                   </div>
-                   <div>
+                  <div>
                     <Label className="text-sm font-medium text-muted-foreground">
                       Référence
                     </Label>
@@ -1340,7 +1361,7 @@ export default function Transactions() {
               Envoyer un remboursement à un utilisateur pour un dédommagement ou erreur système
             </DialogDescription>
           </DialogHeader>
-          
+
           {loadingRefundData ? (
             <div className="flex justify-center items-center py-8">
               <Activity className="h-6 w-6 animate-spin mr-2" />
@@ -1354,7 +1375,7 @@ export default function Transactions() {
                   <Combobox
                     options={userOptions}
                     value={refundData.userId}
-                    onValueChange={(value) => setRefundData({...refundData, userId: value})}
+                    onValueChange={(value) => setRefundData({ ...refundData, userId: value })}
                     placeholder="Rechercher un utilisateur..."
                     searchPlaceholder="Rechercher par nom ou téléphone..."
                     emptyText="Aucun utilisateur trouvé."
@@ -1371,7 +1392,7 @@ export default function Transactions() {
                   />
                 </div>
               </div>
-              
+
               <div>
                 <Label htmlFor="refund-amount">Montant <span className="text-red-500">*</span></Label>
                 <Input
@@ -1379,10 +1400,10 @@ export default function Transactions() {
                   type="number"
                   placeholder="Montant (ex: 50000)"
                   value={refundData.amount}
-                  onChange={(e) => setRefundData({...refundData, amount: e.target.value})}
+                  onChange={(e) => setRefundData({ ...refundData, amount: e.target.value })}
                 />
               </div>
-              
+
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="refund-transactionReason">Raison de la transaction <span className="text-red-500">*</span></Label>
@@ -1390,15 +1411,15 @@ export default function Transactions() {
                     id="refund-transactionReason"
                     placeholder="Ex: Erreur système..."
                     value={refundData.transactionReason}
-                    onChange={(e) => setRefundData({...refundData, transactionReason: e.target.value})}
+                    onChange={(e) => setRefundData({ ...refundData, transactionReason: e.target.value })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="refund-exchangeRate">Taux de change <span className="text-red-500">*</span></Label>
-                  <Select 
-                    value={refundData.exchangeRateId} 
-                    onValueChange={(value) => setRefundData({...refundData, exchangeRateId: value})}
+                  <Select
+                    value={refundData.exchangeRateId}
+                    onValueChange={(value) => setRefundData({ ...refundData, exchangeRateId: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner" />
@@ -1412,12 +1433,12 @@ export default function Transactions() {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div>
                   <Label htmlFor="refund-sendMethod">Moyen d'envoi <span className="text-red-500">*</span></Label>
-                  <Select 
-                    value={refundData.sendMethod} 
-                    onValueChange={(value) => setRefundData({...refundData, sendMethod: value})}
+                  <Select
+                    value={refundData.sendMethod}
+                    onValueChange={(value) => setRefundData({ ...refundData, sendMethod: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner" />
@@ -1432,21 +1453,21 @@ export default function Transactions() {
                   </Select>
                 </div>
               </div>
-              
+
               <div>
                 <Label htmlFor="refund-notes">Notes Administratives</Label>
                 <Textarea
                   id="refund-notes"
                   placeholder="Détails du remboursement, référence transaction originale, etc..."
                   value={refundData.notes}
-                  onChange={(e) => setRefundData({...refundData, notes: e.target.value})}
+                  onChange={(e) => setRefundData({ ...refundData, notes: e.target.value })}
                   rows={3}
                 />
               </div>
-              
+
               <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setIsRefundModalOpen(false);
                     setRefundData({
@@ -1462,8 +1483,8 @@ export default function Transactions() {
                 >
                   Annuler
                 </Button>
-                <Button 
-                  onClick={handleRefund} 
+                <Button
+                  onClick={handleRefund}
                   className="bg-warning hover:bg-warning/90 text-warning-foreground"
                   disabled={!refundData.userId || !refundData.amount || !refundData.transactionReason || !refundData.exchangeRateId || !refundData.sendMethod}
                 >
