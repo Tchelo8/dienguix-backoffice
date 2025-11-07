@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import axios from 'axios';
 import {
   Select,
   SelectContent,
@@ -232,25 +231,44 @@ export default function Transactions() {
     }
   };
 
-
-
   const loadSendOperators2 = async () => {
     try {
-      const token = localStorage.getItem("auth_token");
-      const response = await axios.get(
-        "https://dienguixbackend-production.up.railway.app/index.php/api/operators/user-country",
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        }
-      );
-      if (response.data.success && response.data.data) {
-        setSendOperators(response.data.data);
+      // Récupérer l'utilisateur depuis localStorage
+      const userData = localStorage.getItem("user_data");
+
+      if (!userData) {
+        console.error("Utilisateur non connecté");
+        return;
       }
-    } catch (error: any) {
-      console.error(" Erreur axios:", error.response?.data || error.message);
+
+      const user = JSON.parse(userData);
+
+      // Vérifier que l'utilisateur a un pays
+      if (!user.country || !user.country.id) {
+        console.error("L'utilisateur n'a pas de pays associé");
+        return;
+      }
+
+      const countryId = user.country.id;
+
+      // console.log("Chargement des opérateurs pour le pays:", countryId);
+
+      // Appeler la nouvelle route simplifiée à cause de railway ptdr!!!!!!
+      const response = await recupererSafe(`api/operators/country/${countryId}/simple`, {
+        showSuccessToast: false,
+        showErrorToast: false,
+      });
+
+      // console.log("Réponse API:", response);
+
+      if (response.success && response.data) {
+        setSendOperators(response.data);
+        // console.log("Opérateurs chargés:", response.data.length);
+      } else {
+        console.error("Erreur:", response.error);
+      }
+    } catch (error) {
+      console.error("Exception:", error);
     }
   };
 
