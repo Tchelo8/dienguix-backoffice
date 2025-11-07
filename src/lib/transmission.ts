@@ -381,7 +381,7 @@ export const deconnecter = () => {
   });
 
   // Redirection vers la page de connexion
-  window.location.href = "/auth";
+  window.location.href = "/";
 };
 
 // Fonction pour vérifier si l'utilisateur est connecté
