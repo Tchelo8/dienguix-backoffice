@@ -19,6 +19,7 @@ interface RegisterData {
   phone: string
   password: string
   role: string
+  country: string
 }
 
 interface Role {
@@ -31,6 +32,15 @@ interface Role {
   users_count: number
 }
 
+interface Country {
+  id: number
+  name: string
+  iso_code: string
+  currency_code: string
+  is_active: boolean
+  status: boolean
+}
+
 // Interface pour les données à envoyer à l'API
 interface ApiUserData {
   first_name: string
@@ -39,6 +49,7 @@ interface ApiUserData {
   phone: string
   password: string
   role: number // ID du rôle au lieu du nom
+  country: number // ID du pays
 }
 
 // Interface pour la réponse de l'API
@@ -58,7 +69,8 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
     email: "",
     phone: "",
     password: "",
-    role: "1"
+    role: "1",
+    country: "1"
   })
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -66,6 +78,8 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [roles, setRoles] = useState<Role[]>([])
   const [rolesLoading, setRolesLoading] = useState(true)
+  const [countries, setCountries] = useState<Country[]>([])
+  const [countriesLoading, setCountriesLoading] = useState(true)
 
   // Récupération des rôles au montage du composant
   useEffect(() => {
@@ -80,14 +94,14 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
           errorMessage: "Erreur lors du chargement des rôles"
         })
 
-        console.log('Réponse chargement rôles:', response)
+        // console.log('Réponse chargement rôles:', response)
 
         if (response.success && response.data && Array.isArray(response.data)) {
           // Filtrer seulement les rôles actifs
           const rolesActifs = response.data.filter(role => role.is_active)
           setRoles(rolesActifs)
 
-          console.log('Rôles actifs chargés:', rolesActifs)
+          // console.log('Rôles actifs chargés:', rolesActifs)
 
           // Définir un rôle par défaut si disponible
           if (rolesActifs.length > 0) {
@@ -173,6 +187,37 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
     chargerRoles()
   }, [])
 
+  // Récupération des pays au montage du composant
+  useEffect(() => {
+    const chargerPays = async () => {
+      try {
+        setCountriesLoading(true)
+        const response = await recupererSafe('api/countries/get', {
+          showErrorToast: false,
+          showSuccessToast: false
+        })
+
+        // console.log('Réponse chargement pays:', response)
+
+        if (response.success && response.data && Array.isArray(response.data)) {
+          const paysActifs = response.data.filter((country: Country) => country.is_active && country.status)
+          setCountries(paysActifs)
+          // console.log('Pays actifs chargés:', paysActifs)
+          
+          if (paysActifs.length > 0) {
+            setFormData(prev => ({ ...prev, country: paysActifs[0].id.toString() }))
+          }
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des pays:', error)
+      } finally {
+        setCountriesLoading(false)
+      }
+    }
+
+    chargerPays()
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -185,6 +230,12 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
     // Validation de la sélection du rôle
     if (!formData.role) {
       afficherToast.erreur("Veuillez sélectionner un rôle", "Erreur de validation")
+      return
+    }
+
+    // Validation de la sélection du pays
+    if (!formData.country) {
+      afficherToast.erreur("Veuillez sélectionner un pays", "Erreur de validation")
       return
     }
 
@@ -220,7 +271,8 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
         email: formData.email.trim().toLowerCase(),
         phone: formData.phone.trim(),
         password: formData.password,
-        role: parseInt(formData.role) // Envoyer l'ID du rôle comme nombre
+        role: parseInt(formData.role), // Envoyer l'ID du rôle comme nombre
+        country: parseInt(formData.country) // Envoyer l'ID du pays comme nombre
       }
 
       console.log('Données envoyées à l\'API:', apiData)
@@ -233,7 +285,7 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
         errorMessage: "Erreur lors de la création du compte"
       })
 
-      console.log('Réponse de l\'API:', response)
+      // console.log('Réponse de l\'API:', response)
 
       if (response.success && response.data) {
         // Succès - response.data contient les données de l'utilisateur créé
@@ -251,12 +303,13 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
           email: "",
           phone: "",
           password: "",
-          role: roles.length > 0 ? roles[0].id.toString() : "1"
+          role: roles.length > 0 ? roles[0].id.toString() : "1",
+          country: countries.length > 0 ? countries[0].id.toString() : "1"
         })
         setConfirmPassword("")
 
         // Appeler la fonction onRegister du parent
-        onRegister(formData)
+        // onRegister(formData) supprimer car provoquait une mésentente lors de l'inscription
 
         // Rediriger vers la page de connexion après un délai
         setTimeout(() => {
@@ -464,6 +517,35 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="country" className="text-primary">Pays *</Label>
+              <Select
+                value={formData.country}
+                onValueChange={(value) => updateFormData("country", value)}
+                disabled={countriesLoading || isLoading}
+              >
+                <SelectTrigger className="border-primary/20 focus:border-primary">
+                  {countriesLoading ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Chargement...</span>
+                    </div>
+                  ) : (
+                    <SelectValue placeholder="Sélectionnez un pays" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  {countries.map((country) => (
+                    <SelectItem key={country.id} value={country.id.toString()}>
+                      {country.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-2">
               <Label htmlFor="password" className="text-primary">Mot de passe *</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -535,7 +617,7 @@ export function RegisterForm({ onToggleForm, onRegister }: RegisterFormProps) {
           <Button
             type="submit"
             className="w-full bg-gradient-primary hover:bg-primary/90 text-primary-foreground"
-            disabled={isLoading || rolesLoading}
+            disabled={isLoading || rolesLoading || countriesLoading}
           >
             {isLoading ? (
               <div className="flex items-center gap-2">

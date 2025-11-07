@@ -167,7 +167,7 @@ export function LoginForm({ onToggleForm, onLogin }: LoginFormProps) {
             {isLoading ? "Connexion..." : "Se connecter"}
           </Button>
 
-          {/* <div className="text-center text-sm">
+          <div className="text-center text-sm">
             <span className="text-muted-foreground">Pas encore de compte? </span>
             <Button
               type="button"
@@ -178,7 +178,7 @@ export function LoginForm({ onToggleForm, onLogin }: LoginFormProps) {
             >
               S'inscrire
             </Button>
-          </div> */}
+          </div>
         </CardFooter>
       </form>
     </Card>

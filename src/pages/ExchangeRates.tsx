@@ -31,6 +31,7 @@ interface ExchangeRateData {
   from_currency: string
   to_currency: string
   rate: number
+  real_rate: number
   margin: number
   transactions_count: number
   profit: number
@@ -320,13 +321,16 @@ export default function ExchangeRates() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                <span className="text-sm">Taux</span>
-                <span className="text-xl font-bold">{rate.rate.toFixed(8)}</span>
+                <span className="text-sm">Taux de Dienguix</span>
+                <span className="text-xl font-bold">{rate.rate}</span>
+                {/* .toFixed(8) fonction pour ajouter des 0 apres les taux */} 
+                <span className="text-sm">Taux Réel fourni par Google</span>
+                <span className="text-xl font-bold">{rate.real_rate}</span>
               </div>
               
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Marge</p>
+                  <p className="text-xs text-muted-foreground">Marge par rapport au taux réel</p>
                   <p className="text-sm font-semibold">{rate.margin.toFixed(1)}%</p>
                 </div>
                 <div className="space-y-1">

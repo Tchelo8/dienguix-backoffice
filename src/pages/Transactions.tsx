@@ -66,7 +66,9 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { recupererSafe } from "@/lib/transmission";
+import { Combobox } from "@/components/ui/combobox"
+
+import { recupererSafe, envoyerSafe } from "@/lib/transmission";
 
 export default function Transactions() {
   const [selectedCountry, setSelectedCountry] = useState("all");
@@ -79,9 +81,11 @@ export default function Transactions() {
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundData, setRefundData] = useState({
     userId: "",
-    userName: "",
+    paymentMethod: "",
     amount: "",
-    reason: "",
+    transactionReason: "",
+    exchangeRateId: "",
+    sendMethod: "",
     notes: "",
   });
   const [currentPage, setCurrentPage] = useState(1);
@@ -94,6 +98,13 @@ export default function Transactions() {
   const [operatorsData, setOperatorsData] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
   const [selectedCountryData, setSelectedCountryData] = useState(null);
+
+  // States pour le modal de remboursement
+  const [users, setUsers] = useState([]);
+  const [exchangeRates, setExchangeRates] = useState([]);
+  const [sendOperators, setSendOperators] = useState([]);
+  const [loadingRefundData, setLoadingRefundData] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null); // L'admin connecté
 
   const itemsPerPage = 10;
 
@@ -116,6 +127,8 @@ export default function Transactions() {
       },
     },
   };
+
+  
 
   // Charger les données des opérateurs depuis l'API
   const loadOperatorsData = async () => {
@@ -170,10 +183,76 @@ export default function Transactions() {
     }
   };
 
+  // Charger les utilisateurs pour le modal de remboursement
+  const loadUsers = async () => {
+    try {
+      const response = await recupererSafe("api/users/list/all/dgapp", {
+        showSuccessToast: false,
+        showErrorToast: false,
+      });
+
+      if (response.success && response.data) {
+        setUsers(response.data);
+      }
+    } catch (error) {
+      console.error("Erreur lors du chargement des utilisateurs:", error);
+    }
+  };
+
+  // Charger les taux de change pour le modal de remboursement
+  const loadExchangeRates = async () => {
+    try {
+      const response = await recupererSafe("api/exchange-rate/active", {
+        showSuccessToast: false,
+        showErrorToast: false,
+      });
+
+      if (response.success && response.data) {
+        setExchangeRates(response.data);
+      }
+    } catch (error) {
+      console.error("Erreur lors du chargement des taux de change:", error);
+    }
+  };
+
+  // Charger les opérateurs pour le modal de remboursement
+  const loadSendOperators = async () => {
+    try {
+      const response = await recupererSafe("api/operators/user-country", {
+        showSuccessToast: false,
+        showErrorToast: false,
+      });
+
+      if (response.success && response.data) {
+        setSendOperators(response.data);
+      }
+    } catch (error) {
+      console.error("Erreur lors du chargement des opérateurs d'envoi:", error);
+    }
+  };
+
+  // Charger les données du modal de remboursement
+  const loadRefundModalData = async () => {
+    setLoadingRefundData(true);
+    await Promise.all([
+      loadUsers(),
+      loadExchangeRates(),
+      loadSendOperators()
+    ]);
+    setLoadingRefundData(false);
+  };
+
   useEffect(() => {
     loadTransactions();
     loadOperatorsData();
   }, []);
+
+  // Charger les données du modal quand il s'ouvre
+  useEffect(() => {
+    if (isRefundModalOpen) {
+      loadRefundModalData();
+    }
+  }, [isRefundModalOpen]);
 
   // Gestion du changement de pays
   useEffect(() => {
@@ -187,6 +266,19 @@ export default function Transactions() {
       setSelectedCountryData(null);
     }
   }, [selectedCountry, operatorsData]);
+
+  // Mettre à jour le moyen de paiement quand un utilisateur est sélectionné
+  useEffect(() => {
+    if (refundData.userId) {
+      const selectedUser = users.find(user => user.id.toString() === refundData.userId);
+      if (selectedUser && selectedUser.profile?.operator?.name) {
+        setRefundData(prev => ({
+          ...prev,
+          paymentMethod: selectedUser.profile.operator.name
+        }));
+      }
+    }
+  }, [refundData.userId, users]);
 
   // Fonction pour obtenir la devise selon le pays
   const getCurrencyByCountry = (countryName) => {
@@ -237,6 +329,15 @@ export default function Transactions() {
     if (!amount) return "0";
     const currency = country === "Gabon" ? "XAF" : "RUB";
     return `${currency} ${parseFloat(amount).toLocaleString()}`;
+  };
+
+  // Formater l'affichage des taux de change
+  const formatExchangeRate = (rate) => {
+    const toCurrency = rate.to_currency.toUpperCase();
+    // Si to_currency est XAF → Gabon vers Russie
+    // Si to_currency est RUB → Russie vers Gabon
+    const direction = toCurrency === "XAF" ? "Gabon → Russie" : "Russie → Gabon";
+    return `${rate.from_currency} → ${rate.to_currency} (${direction})`;
   };
 
   const filteredTransactions = transactions.filter((transaction) => {
@@ -290,16 +391,68 @@ export default function Transactions() {
     setSelectedTransaction(null);
   };
 
-  const handleRefund = () => {
-    console.log("Remboursement:", refundData);
-    setIsRefundModalOpen(false);
-    setRefundData({
-      userId: "",
-      userName: "",
-      amount: "",
-      reason: "",
-      notes: "",
-    });
+  const handleRefund = async () => {
+    // Validation des données
+    if (!refundData.userId || !refundData.amount || !refundData.transactionReason || 
+        !refundData.exchangeRateId || !refundData.sendMethod) {
+      console.error("Tous les champs obligatoires doivent être remplis");
+      return;
+    }
+
+    try {
+      // Récupérer l'utilisateur sélectionné
+      const selectedUser = users.find(user => user.id.toString() === refundData.userId);
+      if (!selectedUser) {
+        console.error("Utilisateur introuvable");
+        return;
+      }
+
+      // Récupérer l'opérateur d'envoi sélectionné
+      const selectedOperator = sendOperators.find(op => op.id.toString() === refundData.sendMethod);
+      if (!selectedOperator) {
+        console.error("Opérateur d'envoi introuvable");
+        return;
+      }
+
+      // Préparer les données simplifiées pour le backend
+      // Le backend va gérer : sender_id, from_country_id, to_country_id, amount_send_code, amount_received_code, transaction_ref
+      const payload = {
+        receiver_id: parseInt(refundData.userId),
+        exchange_rate_id: parseInt(refundData.exchangeRateId),
+        amount_sent: parseFloat(refundData.amount),
+        operator_sender_id: parseInt(refundData.sendMethod),
+        operator_receiver_id: selectedUser.profile?.operator?.id,
+        payment_method: selectedOperator.type || "MOBILE MONEY",
+        note: `Remboursement - Raison: ${refundData.transactionReason}${refundData.notes ? `\nNotes: ${refundData.notes}` : ""}`
+      };
+
+      console.log("Envoi du remboursement:", payload);
+      
+      // Envoyer la transaction
+      const response = await envoyerSafe("api/transactions/create/dgapp", payload, {
+        showSuccessToast: true,
+        showErrorToast: true,
+      });
+
+      if (response.success) {
+        // Réinitialiser le formulaire
+        setRefundData({
+          userId: "",
+          paymentMethod: "",
+          amount: "",
+          transactionReason: "",
+          exchangeRateId: "",
+          sendMethod: "",
+          notes: "",
+        });
+        setIsRefundModalOpen(false);
+        
+        // Recharger les transactions
+        loadTransactions();
+      }
+    } catch (error) {
+      console.error("Erreur lors du remboursement:", error);
+    }
   };
 
   const getCurrentStats = () => {
@@ -339,6 +492,12 @@ export default function Transactions() {
   };
 
   const currentStats = getCurrentStats();
+
+  // Préparer les options pour le Combobox des utilisateurs
+  const userOptions = users.map(user => ({
+    value: user.id.toString(),
+    label: `${user.full_name} (${user.phone})`
+  }));
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -782,12 +941,6 @@ export default function Transactions() {
                             <Eye className="h-4 w-4 mr-2" />
                             Voir détails
                           </DropdownMenuItem>
-                          {/* <DropdownMenuItem
-                            onClick={() => handleEditTransaction(transaction)}
-                          >
-                            <Edit className="h-4 w-4 mr-2" />
-                            Modifier
-                          </DropdownMenuItem> */}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -866,7 +1019,7 @@ export default function Transactions() {
 
       {/* Modal de visualisation */}
       <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Détails de la Transaction</DialogTitle>
             <DialogDescription>
@@ -888,14 +1041,7 @@ export default function Transactions() {
                       {formatTransactionId(selectedTransaction.id)}
                     </p>
                   </div>
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">
-                      Référence
-                    </Label>
-                    <p className="text-sm font-mono">
-                      {selectedTransaction.transaction_ref}
-                    </p>
-                  </div>
+                 
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">
                       Type de Transaction
@@ -964,6 +1110,14 @@ export default function Transactions() {
                       {formatDate(selectedTransaction.updated_at)}
                     </p>
                   </div>
+                   <div>
+                    <Label className="text-sm font-medium text-muted-foreground">
+                      Référence
+                    </Label>
+                    <p className="text-sm font-mono">
+                      {selectedTransaction.transaction_ref}
+                    </p>
+                  </div>
                   {selectedTransaction.completed_at && (
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">
@@ -1013,7 +1167,7 @@ export default function Transactions() {
                   </div>
                   <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                     <Label className="text-sm font-medium text-orange-700">
-                      Frais gagné
+                      Frais gagné sur la transaction
                     </Label>
                     <p className="text-xl font-bold text-orange-800">
                       {formatAmount(selectedTransaction.amount_win)}
@@ -1174,236 +1328,151 @@ export default function Transactions() {
         </DialogContent>
       </Dialog>
 
-
-    
-      {/* j'ai commenté cette partie car elle n'est pas utile pour un début , nous n'avons pas besoin de modifier une transaction */}
-      {/* Modal d'édition */}
-      {/* <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Modifier la Transaction</DialogTitle>
-            <DialogDescription>
-              Modifiez les informations de la transaction{" "}
-              {selectedTransaction &&
-                formatTransactionId(selectedTransaction.id)}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedTransaction && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-from">Expéditeur</Label>
-                  <Input
-                    id="edit-from"
-                    value={`${selectedTransaction.sender?.first_name || ""} ${
-                      selectedTransaction.sender?.last_name || ""
-                    }`}
-                    onChange={(e) => {
-                      const names = e.target.value.split(" ");
-                      setSelectedTransaction({
-                        ...selectedTransaction,
-                        sender: {
-                          ...selectedTransaction.sender,
-                          first_name: names[0] || "",
-                          last_name: names.slice(1).join(" ") || "",
-                        },
-                      });
-                    }}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-to">Destinataire</Label>
-                  <Input
-                    id="edit-to"
-                    value={`${selectedTransaction.receiver?.first_name || ""} ${
-                      selectedTransaction.receiver?.last_name || ""
-                    }`}
-                    onChange={(e) => {
-                      const names = e.target.value.split(" ");
-                      setSelectedTransaction({
-                        ...selectedTransaction,
-                        receiver: {
-                          ...selectedTransaction.receiver,
-                          first_name: names[0] || "",
-                          last_name: names.slice(1).join(" ") || "",
-                        },
-                      });
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-amount">Montant</Label>
-                  <Input
-                    id="edit-amount"
-                    value={selectedTransaction.amount_sent || ""}
-                    onChange={(e) =>
-                      setSelectedTransaction({
-                        ...selectedTransaction,
-                        amount_sent: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-status">Statut</Label>
-                  <Select
-                    value={selectedTransaction.trans_status || ""}
-                    onValueChange={(value) =>
-                      setSelectedTransaction({
-                        ...selectedTransaction,
-                        trans_status: value,
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Terminé">Terminé</SelectItem>
-                      <SelectItem value="En cours">En cours</SelectItem>
-                      <SelectItem value="Échoué">Échoué</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="edit-notes">Notes administratives</Label>
-                <Textarea
-                  id="edit-notes"
-                  placeholder="Ajoutez des notes sur cette modification..."
-                  value={selectedTransaction.note || ""}
-                  onChange={(e) =>
-                    setSelectedTransaction({
-                      ...selectedTransaction,
-                      note: e.target.value,
-                    })
-                  }
-                  rows={3}
-                />
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditModalOpen(false)}
-                >
-                  Annuler
-                </Button>
-                <Button
-                  onClick={handleSaveTransaction}
-                  className="bg-gradient-primary hover:bg-primary/90"
-                >
-                  Sauvegarder
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog> */}
-
       {/* Modal de remboursement */}
       <Dialog open={isRefundModalOpen} onOpenChange={setIsRefundModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
               Remboursement Utilisateur
             </DialogTitle>
             <DialogDescription>
-              Envoyer un remboursement à un utilisateur pour un dédommagement ou
-              erreur système
+              Envoyer un remboursement à un utilisateur pour un dédommagement ou erreur système
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          
+          {loadingRefundData ? (
+            <div className="flex justify-center items-center py-8">
+              <Activity className="h-6 w-6 animate-spin mr-2" />
+              Chargement des données...
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="refund-userId">Utilisateur</Label>
+                  <Combobox
+                    options={userOptions}
+                    value={refundData.userId}
+                    onValueChange={(value) => setRefundData({...refundData, userId: value})}
+                    placeholder="Rechercher un utilisateur..."
+                    searchPlaceholder="Rechercher par nom ou téléphone..."
+                    emptyText="Aucun utilisateur trouvé."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="refund-paymentMethod">Moyen de paiement de l'utilisateur</Label>
+                  <Input
+                    id="refund-paymentMethod"
+                    placeholder="Sélectionnez d'abord un utilisateur"
+                    value={refundData.paymentMethod}
+                    disabled
+                    className="bg-gray-50"
+                  />
+                </div>
+              </div>
+              
               <div>
-                <Label htmlFor="refund-userId">N° Utilisateur</Label>
+                <Label htmlFor="refund-amount">Montant <span className="text-red-500">*</span></Label>
                 <Input
-                  id="refund-userId"
-                  placeholder="USR001"
-                  value={refundData.userId}
-                  onChange={(e) =>
-                    setRefundData({ ...refundData, userId: e.target.value })
-                  }
+                  id="refund-amount"
+                  type="number"
+                  placeholder="Montant (ex: 50000)"
+                  value={refundData.amount}
+                  onChange={(e) => setRefundData({...refundData, amount: e.target.value})}
                 />
               </div>
+              
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="refund-transactionReason">Raison de la transaction <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="refund-transactionReason"
+                    placeholder="Ex: Erreur système..."
+                    value={refundData.transactionReason}
+                    onChange={(e) => setRefundData({...refundData, transactionReason: e.target.value})}
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="refund-exchangeRate">Taux de change <span className="text-red-500">*</span></Label>
+                  <Select 
+                    value={refundData.exchangeRateId} 
+                    onValueChange={(value) => setRefundData({...refundData, exchangeRateId: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {exchangeRates.map((rate) => (
+                        <SelectItem key={rate.id} value={rate.id.toString()}>
+                          {formatExchangeRate(rate)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="refund-sendMethod">Moyen d'envoi <span className="text-red-500">*</span></Label>
+                  <Select 
+                    value={refundData.sendMethod} 
+                    onValueChange={(value) => setRefundData({...refundData, sendMethod: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sendOperators.map((operator) => (
+                        <SelectItem key={operator.id} value={operator.id.toString()}>
+                          {operator.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
               <div>
-                <Label htmlFor="refund-userName">Nom Utilisateur</Label>
-                <Input
-                  id="refund-userName"
-                  placeholder="Nom complet"
-                  value={refundData.userName}
-                  onChange={(e) =>
-                    setRefundData({ ...refundData, userName: e.target.value })
-                  }
+                <Label htmlFor="refund-notes">Notes Administratives</Label>
+                <Textarea
+                  id="refund-notes"
+                  placeholder="Détails du remboursement, référence transaction originale, etc..."
+                  value={refundData.notes}
+                  onChange={(e) => setRefundData({...refundData, notes: e.target.value})}
+                  rows={3}
                 />
               </div>
+              
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setIsRefundModalOpen(false);
+                    setRefundData({
+                      userId: "",
+                      paymentMethod: "",
+                      amount: "",
+                      transactionReason: "",
+                      exchangeRateId: "",
+                      sendMethod: "",
+                      notes: "",
+                    });
+                  }}
+                >
+                  Annuler
+                </Button>
+                <Button 
+                  onClick={handleRefund} 
+                  className="bg-warning hover:bg-warning/90 text-warning-foreground"
+                  disabled={!refundData.userId || !refundData.amount || !refundData.transactionReason || !refundData.exchangeRateId || !refundData.sendMethod}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Envoyer Remboursement
+                </Button>
+              </div>
             </div>
-            <div>
-              <Label htmlFor="refund-amount">Montant du Remboursement</Label>
-              <Input
-                id="refund-amount"
-                placeholder="Montant "
-                value={refundData.amount}
-                onChange={(e) =>
-                  setRefundData({ ...refundData, amount: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="refund-reason">Raison du Remboursement</Label>
-              <Select
-                value={refundData.reason}
-                onValueChange={(value) =>
-                  setRefundData({ ...refundData, reason: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner une raison" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="error_system">Erreur Système</SelectItem>
-                  <SelectItem value="error_user">Erreur Utilisateur</SelectItem>
-                  <SelectItem value="compensation">Dédommagement</SelectItem>
-                  <SelectItem value="fraudulent">
-                    Transaction Frauduleuse
-                  </SelectItem>
-                  <SelectItem value="other">Autre</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="refund-notes">Notes Administratives</Label>
-              <Textarea
-                id="refund-notes"
-                placeholder="Détails du remboursement, référence transaction originale, etc..."
-                value={refundData.notes}
-                onChange={(e) =>
-                  setRefundData({ ...refundData, notes: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setIsRefundModalOpen(false)}
-              >
-                Annuler
-              </Button>
-              <Button
-                onClick={handleRefund}
-                className="bg-warning hover:bg-warning/90 text-warning-foreground"
-                disabled={
-                  !refundData.userId || !refundData.amount || !refundData.reason
-                }
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Envoyer Remboursement
-              </Button>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

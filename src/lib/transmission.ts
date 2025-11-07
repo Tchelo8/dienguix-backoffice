@@ -4,9 +4,9 @@ import { toast } from "@/hooks/use-toast";
 const API_BASE_URL =
   process.env.NODE_ENV === "production"
     ? "https://dienguixbackend-production.up.railway.app/index.php/"
-    : "https://dienguixbackend-production.up.railway.app/index.php/";
+    : "http://127.0.0.1:8000/";
 
-    // http://127.0.0.1:8000/
+    // https://dienguixbackend-production.up.railway.app/index.php/
 
 // Types pour les réponses API
 interface ApiResponse<T = any> {
