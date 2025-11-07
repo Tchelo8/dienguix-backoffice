@@ -465,7 +465,7 @@ export default function Transactions() {
         note: `Remboursement - Raison: ${refundData.transactionReason}${refundData.notes ? `\nNotes: ${refundData.notes}` : ""}`
       };
 
-      console.log("Envoi du remboursement:", payload);
+      // console.log("Envoi du remboursement:", payload);
 
       // Envoyer la transaction
       const response = await envoyerSafe("api/transactions/create/dgapp", payload, {
@@ -487,6 +487,77 @@ export default function Transactions() {
         setIsRefundModalOpen(false);
 
         // Recharger les transactions
+        loadTransactions();
+      }
+    } catch (error) {
+      console.error("Erreur lors du remboursement:", error);
+    }
+  };
+
+  // Fonction clône car je récupere l'utilisateur connecté manuellement à cause de railway qui fait chier !!!
+  const handleRefund2 = async () => {
+    // Validation des données
+    if (!refundData.userId || !refundData.amount || !refundData.transactionReason ||
+      !refundData.exchangeRateId || !refundData.sendMethod) {
+      console.error("Tous les champs obligatoires doivent être remplis");
+      return;
+    }
+
+    try {
+      // Récupérer l'utilisateur connecté (sender)
+      const userData = localStorage.getItem("user_data");
+      if (!userData) {
+        console.error("Utilisateur non connecté");
+        return;
+      }
+      const currentUser = JSON.parse(userData);
+
+      // Récupérer l'utilisateur sélectionné (receiver)
+      const selectedUser = users.find(user => user.id.toString() === refundData.userId);
+      if (!selectedUser) {
+        console.error("Utilisateur introuvable");
+        return;
+      }
+
+      // Récupérer l'opérateur d'envoi sélectionné
+      const selectedOperator = sendOperators.find(op => op.id.toString() === refundData.sendMethod);
+      if (!selectedOperator) {
+        console.error("Opérateur d'envoi introuvable");
+        return;
+      }
+
+      // Préparer les données avec sender_id
+      const payload = {
+        sender_id: currentUser.id, 
+        receiver_id: parseInt(refundData.userId),
+        exchange_rate_id: parseInt(refundData.exchangeRateId),
+        amount_sent: parseFloat(refundData.amount),
+        operator_sender_id: parseInt(refundData.sendMethod),
+        operator_receiver_id: selectedUser.profile?.operator?.id,
+        payment_method: selectedOperator.type || "MOBILE MONEY",
+        note: `Remboursement - Raison: ${refundData.transactionReason}${refundData.notes ? `\nNotes: ${refundData.notes}` : ""
+          }`,
+      };
+
+      // Appeler la NOUVELLE route simplifiée
+      const response = await envoyerSafe("api/transactions/create/simple", payload, {
+        showSuccessToast: true,
+        showErrorToast: true,
+      });
+
+      if (response.success) {
+        // Réinitialiser le formulaire
+        setRefundData({
+          userId: "",
+          paymentMethod: "",
+          amount: "",
+          transactionReason: "",
+          exchangeRateId: "",
+          sendMethod: "",
+          notes: "",
+        });
+
+        setIsRefundModalOpen(false);
         loadTransactions();
       }
     } catch (error) {
@@ -1502,7 +1573,7 @@ export default function Transactions() {
                   Annuler
                 </Button>
                 <Button
-                  onClick={handleRefund}
+                  onClick={handleRefund2}
                   className="bg-warning hover:bg-warning/90 text-warning-foreground"
                   disabled={!refundData.userId || !refundData.amount || !refundData.transactionReason || !refundData.exchangeRateId || !refundData.sendMethod}
                 >
